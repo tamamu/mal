@@ -1,0 +1,19 @@
+[package]
+name = "mal"
+version = "0.1.0"
+authors = ["tamamu <tamamu.1r1s@gmail.com>"]
+
+
+[dependencies]
+gl = "*"
+libc = "*"
+
+[dependencies.glfw]
+git = "https://github.com/bjz/glfw-rs.git"
+
+[dependencies.nanovg]
+version = "*"
+features = ["gles2"]
+
+[target.'cfg(unix)'.dependencies]
+x11 = {version = "2.12.0", features = ["xlib"]}
