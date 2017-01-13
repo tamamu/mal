@@ -14,9 +14,43 @@ impl LineBuffer {
   pub fn new() -> LineBuffer {
     VecDeque::new()
   }
+  pub fn input_front(&mut self, value: String) -> usize {
+    let mut iter = value.chars().iter();
+    let mut len: usize = 0;
+    for c in iter {
+      self.push_front(c);
+      len += 1;
+    }
+    len
+  }
+  pub fn input_at(&mut self, index: &usize, value: String) -> usize {
+    let mut iter = value.chars().iter().enumerate();
+    let mut len: usize = 0;
+    for stride, c in iter {
+      self.insert(index+stride, c);
+      len += 1;
+    }
+    len
+  }
+  
+  pub fn input_back(&mut self, value: String) -> usize {
+    let mut iter = value.chars().iter();
+    let mut len: usize = 0;
+    for c in iter {
+      self.push_back(c);
+      len += 1;
+    }
+    len
+  }
 }
 
-struct TextBuffer = Vec<LineBuffer>;
+struct TextBuffer = VecDeque<LineBuffer>;
+
+impl TextBuffer {
+  pub fn new() -> TextBuffer {
+    VecDeque::new()
+  }
+}
 
 struct Position {
   row: usize,
@@ -47,7 +81,7 @@ struct Editor {
 impl Editor {
   pub fn new() -> Editor {
     Editor {
-      buffer: Vec::new(),
+      buffer: TextBuffer::new(),
       main_caret: Position{row: 0, col: 0, range: 0},
       sub_caret: Vec::new(),
       undo_pool: Rc::new(RefCell::new(Vec::new())),
@@ -56,6 +90,13 @@ impl Editor {
     }
   }
   pub fn insert(&mut self, text: String) {
-    self.
+    let line = &mut self.buffer[self.main_caret.row];
+    if line.len() == self.main_caret.col {
+      self.main_caret.col += line.input_back(text);
+    } else if self.main_caret.col == 0 {
+      self.main_caret.col += line.input_front(text);
+    } else {
+      self.main_caret.col += line.input_at(&self.main_caret.col, text);
+    }
   } 
 }
