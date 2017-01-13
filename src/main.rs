@@ -18,6 +18,8 @@ use libc::*;
 use x11::xlib::*;
 use glfw::{Action, Context, Key};
 
+mod backend;
+
 struct XIMDevice {
     im: XIM,
     ic: XIC,
