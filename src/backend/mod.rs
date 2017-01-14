@@ -26,7 +26,7 @@ impl EditableLine for LineBuffer {
     fn input_front(&mut self, text: String) -> usize {
         let chars = text.chars();
         let mut len: usize = 0;
-        for c in chars {
+        for c in chars.rev() {
             self.push_front(c);
             len += 1;
         }
@@ -134,6 +134,19 @@ impl Editor {
             modified: false,
         }
     }
+    pub fn backward(&mut self) {
+        if self.main_caret.col == 0 {
+            if self.main_caret.row > 0 {
+                self.main_caret.row -= 1;
+                self.main_caret.col = self.buffer
+                                          .get(self.main_caret.row)
+                                          .expect("Caret out of bounds!")
+                                          .len();
+            }
+        } else {
+            self.main_caret.col -= 1;
+        }
+    }
     pub fn forward(&mut self) {
         self.main_caret.col += 1;
         let line = self.buffer.get(self.main_caret.row).expect("Caret out of bounds!");
@@ -169,8 +182,11 @@ mod tests {
     #[test]
     fn editor_test1() {
         let mut editor = Editor::new();
-        editor.insert(String::from("Hello "));
-        editor.insert(String::from("world!!"));
+        editor.insert(String::from("l"));
+        editor.backward();
+        editor.insert(String::from("He"));
+        editor.forward();
+        editor.insert(String::from("lo world!!"));
         assert_eq!(editor.get_all(), "Hello world!!");
     }
 }
