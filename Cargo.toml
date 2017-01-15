@@ -5,15 +5,14 @@ authors = ["tamamu <tamamu.1r1s@gmail.com>"]
 
 
 [dependencies]
+rustbox = "*"
 gl = "*"
 libc = "*"
-
-[dependencies.glfw]
-git = "https://github.com/bjz/glfw-rs.git"
+glutin = "*"
 
 [dependencies.nanovg]
 version = "*"
-features = ["gles2"]
+features = ["gl3"]
 
 [target.'cfg(unix)'.dependencies]
 x11 = {version = "2.12.0", features = ["xlib"]}

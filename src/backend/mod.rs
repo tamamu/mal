@@ -9,9 +9,9 @@ use std::cell::Cell;
 use std::collections::VecDeque;
 use std::iter::FromIterator;
 
-type LineBuffer = VecDeque<char>;
+pub type LineBuffer = VecDeque<char>;
 
-trait EditableLine {
+pub trait EditableLine {
     fn new() -> Self;
     fn input_front(&mut self, text: String) -> usize;
     fn input_at(&mut self, index: &usize, text: String) -> usize;
@@ -56,7 +56,7 @@ impl EditableLine for LineBuffer {
     }
 }
 
-struct TextBuffer {
+pub struct TextBuffer {
     lines: VecDeque<LineBuffer>,
 }
 
@@ -65,6 +65,12 @@ impl TextBuffer {
         let mut lines = VecDeque::new();
         lines.push_back(EditableLine::new());
         TextBuffer { lines: lines }
+    }
+    fn new_line(&mut self, index: usize, line: LineBuffer) {
+        self.lines.insert(index, line);
+    }
+    fn remove(&mut self, index: usize) -> Option<LineBuffer> {
+        self.lines.remove(index)
     }
     fn get(&self, index: usize) -> Option<&LineBuffer> {
         self.lines.get(index)
@@ -93,10 +99,10 @@ impl TextBuffer {
     }
 }
 
-struct Position {
-    row: usize,
-    col: usize,
-    range: usize,
+pub struct Position {
+    pub row: usize,
+    pub col: usize,
+    pub range: usize,
 }
 
 enum ChangeType {
@@ -104,15 +110,15 @@ enum ChangeType {
     Delete,
 }
 
-struct Change {
+pub struct Change {
     pos: Vec<Position>,
     text: String,
     ctype: ChangeType,
 }
 
-struct Editor {
+pub struct Editor {
     buffer: TextBuffer,
-    main_caret: Position,
+    pub main_caret: Position,
     sub_caret: Vec<Position>,
     undo_pool: Rc<RefCell<Vec<Change>>>,
     redo_pool: Rc<RefCell<Vec<Change>>>,
@@ -134,6 +140,47 @@ impl Editor {
             modified: false,
         }
     }
+    pub fn insert_line(&mut self) {
+        let conc_line = self.buffer
+                            .get_mut(self.main_caret.row)
+                            .expect("Line out of bounds!")
+                            .split_off(self.main_caret.col);
+        self.buffer.new_line(self.main_caret.row + 1, conc_line);
+    }
+    pub fn backspace(&mut self) {
+        if self.main_caret.col == 0 {
+            if self.main_caret.row > 0 {
+                let mut conc_line = self.buffer
+                                        .get(self.main_caret.row)
+                                        .expect("Line out of bounds!")
+                                        .clone();
+                {
+                    let mut prev_line = self.buffer
+                                            .get_mut(self.main_caret.row - 1)
+                                            .expect("Line out of bounds!");
+                    prev_line.append(&mut conc_line);
+                }
+                self.buffer.remove(self.main_caret.row);
+                self.main_caret.row -= 1;
+            }
+        } else {
+            let removed_char = self.buffer
+                                   .get_mut(self.main_caret.row)
+                                   .expect("Caret out of bounds!")
+                                   .remove(self.main_caret.col - 1);
+            match removed_char {
+                Some(c) => {
+                    let backward_length = if c.len_utf8() > 1 {
+                        2
+                    } else {
+                        1
+                    };
+                    self.main_caret.col -= backward_length;
+                }
+                None => {}
+            }
+        }
+    }
     pub fn backward(&mut self) {
         if self.main_caret.col == 0 {
             if self.main_caret.row > 0 {
@@ -144,21 +191,57 @@ impl Editor {
                                           .len();
             }
         } else {
-            self.main_caret.col -= 1;
+            let backward_length = match self.buffer
+                                            .get(self.main_caret.row)
+                                            .expect("Caret out of bounds!")
+                                            .get(self.main_caret.col - 1) {
+                Some(c) => {
+                    if c.len_utf8() > 1 {
+                        2
+                    } else {
+                        1
+                    }
+                }
+                None => 1,
+            };
+            self.main_caret.col -= backward_length;
         }
     }
     pub fn forward(&mut self) {
-        self.main_caret.col += 1;
+        let forward_length = match self.buffer
+                                       .get(self.main_caret.row)
+                                       .expect("Caret out of bounds!")
+                                       .get(self.main_caret.col) {
+            Some(c) => {
+                if c.len_utf8() > 1 {
+                    2
+                } else {
+                    1
+                }
+            }
+            None => 1,
+        };
+        self.main_caret.col += forward_length;
         let line = self.buffer.get(self.main_caret.row).expect("Caret out of bounds!");
         let len = line.len();
         if len < self.main_caret.col {
-            if self.buffer.len() <= self.main_caret.row {
+            if self.buffer.len() - 1 <= self.main_caret.row {
                 self.main_caret.col = len;
             } else {
                 self.main_caret.col = 0;
                 self.main_caret.row += 1;
             }
         }
+    }
+    pub fn insert_char(&mut self, c: char) {
+        let line = &mut self.buffer.get_mut(self.main_caret.row).expect("Caret out of bounds!");
+        line.insert(self.main_caret.col, c);
+        let forward_length = if c.len_utf8() > 1 {
+            2
+        } else {
+            1
+        };
+        self.main_caret.col += forward_length;
     }
     pub fn insert(&mut self, text: String) {
         let line = &mut self.buffer.get_mut(self.main_caret.row).expect("Caret out of bounds!");
@@ -169,6 +252,12 @@ impl Editor {
         } else {
             self.main_caret.col += line.input_at(&self.main_caret.col, text);
         }
+    }
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
+    pub fn get(&self, index: usize) -> Option<&LineBuffer> {
+        self.buffer.get(index)
     }
     pub fn get_all(&self) -> String {
         self.buffer.extract()
