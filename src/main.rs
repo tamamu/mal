@@ -3,20 +3,7 @@
 #![allow(unused_variables)]
 #![allow(non_snake_case)]
 
-extern crate x11;
-extern crate gl;
-extern crate glutin;
-extern crate libc;
-extern crate nanovg;
 extern crate rustbox;
-
-
-// use std::cell::Cell; // for glfw error count
-// use std::ptr;
-// use std::ffi::CString;
-// use libc::*;
-// use x11::xlib::*;
-
 
 use rustbox::{Color, RustBox, Key};
 use std::error::Error;
