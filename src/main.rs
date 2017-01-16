@@ -4,8 +4,11 @@
 #![allow(non_snake_case)]
 
 extern crate rustbox;
+extern crate clap;
 
 use rustbox::{Color, RustBox, Key};
+use clap::{Arg, App};
+use std::path::Path;
 use std::error::Error;
 use std::default::Default;
 mod backend;
@@ -18,6 +21,20 @@ struct EditorView {
     y: usize,
     row: usize,
     col: usize,
+    lnum_pad: usize,
+}
+
+fn right_aligned_text(text: &str, width: usize) -> String {
+    let blanks_len = width - text.chars().count();
+    if blanks_len < 0 {
+        panic!("{} is out of width size {}!", text, width);
+    }
+    let mut aligned = String::with_capacity(width);
+    for idx in 0..blanks_len {
+        aligned.push(' ');
+    }
+    aligned.push_str(text);
+    aligned
 }
 
 impl EditorView {
@@ -33,41 +50,84 @@ impl EditorView {
             term: term,
             x: 0,
             y: 0,
-            row: row,
+            row: row - 1,
             col: col,
+            lnum_pad: 1,
         }
     }
-    fn redraw_line(&self, index: usize) {
-        if self.editor.len() <= index {
-            panic!("Line out of bounds!");
+    fn format_info(&self) -> String {
+        right_aligned_text(&format!("{}:{}  ",
+                                    self.editor.main_caret.row,
+                                    self.editor.main_caret.col),
+                           self.col)
+    }
+    fn redraw(&self) {
+        let start = self.y;
+        let end = self.editor.len() - start;
+        let height = self.row;
+        for idx in start..start + height {
+            self.redraw_line(idx);
         }
-        if index >= self.y && self.y + self.row >= index {
-            let dy = index - self.y;
-            for col in 4..self.col {
-                self.term.print_char(col, dy, rustbox::RB_NORMAL, Color::White, Color::Black, ' ');
-            }
+        self.redraw_infobar();
+    }
+    fn redraw_infobar(&self) {
+        self.term.print(0,
+                        self.row,
+                        rustbox::RB_BOLD,
+                        Color::White,
+                        Color::Cyan,
+                        &self.format_info());
+    }
+    fn redraw_line(&self, index: usize) {
+        let dy = index - self.y;
+        for col in 0..self.col {
+            self.term.print_char(col, dy, rustbox::RB_NORMAL, Color::White, Color::Black, ' ');
+        }
+        if self.editor.len() > index && index >= self.y && self.y + self.row >= index {
             let line = self.editor.get(index).unwrap();
-            if self.editor.main_caret.row == index {
-                self.term.print(0, dy, rustbox::RB_BOLD, Color::Black, Color::White, " 1 ");
-                self.term.print(4,
-                                dy,
-                                rustbox::RB_NORMAL,
-                                Color::White,
-                                Color::Black,
-                                &line.extract());
-            }
+            self.term.print(0,
+                            dy,
+                            rustbox::RB_BOLD,
+                            Color::Yellow,
+                            Color::Black,
+                            &format!("{} ",
+                                     right_aligned_text(&(index + 1).to_string(), self.lnum_pad)));
+            self.term.print(self.lnum_pad + 2,
+                            dy,
+                            rustbox::RB_NORMAL,
+                            Color::White,
+                            Color::Black,
+                            &line.extract());
+
         }
     }
     fn draw_caret(&self) {
-        self.term.set_cursor(self.editor.main_caret.col as isize + 4,
-                             self.editor.main_caret.row as isize);
+        self.term.set_cursor((self.editor.main_caret.col + self.lnum_pad) as isize + 2,
+                             (self.editor.main_caret.row - self.y) as isize);
     }
 }
 
 fn main() {
+    let matches = App::new("Mal")
+                      .version("0.1.0")
+                      .author("Tamamu <tamamu.1r1s@gmail.com>")
+                      .about("Minimal text editor")
+                      .arg(Arg::with_name("FILE")
+                               .short("o")
+                               .long("open")
+                               .value_name("FILE")
+                               .help("Sets the file to edit"))
+                      .get_matches();
+
     let mut view = EditorView::new();
-    view.editor.insert(String::from("Hello world!!"));
-    view.redraw_line(0);
+    // view.editor.insert(String::from("Hello world!!"));
+
+    if let Some(path) = matches.value_of("FILE") {
+        view.editor.read_file(Path::new(path))
+    }
+
+
+    view.redraw();
     view.draw_caret();
     view.term.present();
     loop {
@@ -76,29 +136,55 @@ fn main() {
                 match key {
                     Key::Char(c) => {
                         view.editor.insert_char(c);
-                        view.redraw_line(0);
+                        view.redraw_line(view.editor.main_caret.row);
                         view.draw_caret();
                         view.term.present();
                     }
                     Key::Enter => {
                         view.editor.insert_line();
-                        view.redraw_line(0);
+                        if view.editor.main_caret.row >= view.y + view.row {
+                            view.y += 1;
+                        }
+                        view.lnum_pad = view.editor.len().to_string().chars().count();
+                        view.redraw();
                         view.draw_caret();
                         view.term.present();
                     }
                     Key::Backspace => {
                         view.editor.backspace();
-                        view.redraw_line(0);
+                        if view.editor.main_caret.row < view.y {
+                            view.y -= 1;
+                            view.redraw();
+                        }
+                        view.redraw();
                         view.draw_caret();
                         view.term.present();
                     }
                     Key::Left => {
-                        view.editor.backward();
+                        view.editor.move_left();
                         view.draw_caret();
                         view.term.present();
                     }
                     Key::Right => {
-                        view.editor.forward();
+                        view.editor.move_right();
+                        view.draw_caret();
+                        view.term.present();
+                    }
+                    Key::Up => {
+                        view.editor.move_up();
+                        if view.editor.main_caret.row < view.y {
+                            view.y -= 1;
+                            view.redraw();
+                        }
+                        view.draw_caret();
+                        view.term.present();
+                    }
+                    Key::Down => {
+                        view.editor.move_down();
+                        if view.editor.main_caret.row >= view.y + view.row {
+                            view.y += 1;
+                            view.redraw();
+                        }
                         view.draw_caret();
                         view.term.present();
                     }
@@ -107,6 +193,7 @@ fn main() {
                     }
                     _ => {}
                 }
+                view.redraw_infobar();
             }
             Err(e) => panic!("{}", e.description()),
             _ => {}

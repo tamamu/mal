@@ -3,11 +3,15 @@
 #![allow(unused_variables)]
 #![allow(non_snake_case)]
 
+use std::error::Error;
+use std::fs::File;
+use std::path::Path;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::iter::FromIterator;
+use std::io::Read;
 
 pub type LineBuffer = VecDeque<char>;
 
@@ -123,6 +127,7 @@ pub struct Editor {
     undo_pool: Rc<RefCell<Vec<Change>>>,
     redo_pool: Rc<RefCell<Vec<Change>>>,
     modified: bool,
+    filename: String,
 }
 
 impl Editor {
@@ -138,6 +143,32 @@ impl Editor {
             undo_pool: Rc::new(RefCell::new(Vec::new())),
             redo_pool: Rc::new(RefCell::new(Vec::new())),
             modified: false,
+            filename: String::from("Untitled"),
+        }
+    }
+    pub fn read_file<P: AsRef<Path>>(&mut self, path: P) {
+        let mut file = match File::open(path.as_ref()) {
+            Err(why) => {
+                panic!("Couldn't open {}: {}",
+                       path.as_ref().display(),
+                       why.description())
+            }
+            Ok(file) => file,
+        };
+        let mut tmp = String::new();
+        match file.read_to_string(&mut tmp) {
+            Err(why) => {
+                panic!("Couldn't read {}: {}",
+                       path.as_ref().display(),
+                       why.description())
+            }
+            Ok(_) => {}
+        }
+        let mut lines = tmp.lines();
+        self.buffer.lines = VecDeque::new();
+        for line in lines {
+            let lb: LineBuffer = line.chars().collect();
+            self.buffer.lines.push_back(lb);
         }
     }
     pub fn insert_line(&mut self) {
@@ -146,6 +177,8 @@ impl Editor {
                             .expect("Line out of bounds!")
                             .split_off(self.main_caret.col);
         self.buffer.new_line(self.main_caret.row + 1, conc_line);
+        self.main_caret.row += 1;
+        self.main_caret.col = 0;
     }
     pub fn backspace(&mut self) {
         if self.main_caret.col == 0 {
@@ -162,6 +195,10 @@ impl Editor {
                 }
                 self.buffer.remove(self.main_caret.row);
                 self.main_caret.row -= 1;
+                self.main_caret.col = self.buffer
+                                          .get(self.main_caret.row)
+                                          .expect("Line out of bounds!")
+                                          .len();
             }
         } else {
             let removed_char = self.buffer
@@ -181,7 +218,7 @@ impl Editor {
             }
         }
     }
-    pub fn backward(&mut self) {
+    pub fn move_left(&mut self) {
         if self.main_caret.col == 0 {
             if self.main_caret.row > 0 {
                 self.main_caret.row -= 1;
@@ -207,7 +244,7 @@ impl Editor {
             self.main_caret.col -= backward_length;
         }
     }
-    pub fn forward(&mut self) {
+    pub fn move_right(&mut self) {
         let forward_length = match self.buffer
                                        .get(self.main_caret.row)
                                        .expect("Caret out of bounds!")
@@ -231,6 +268,31 @@ impl Editor {
                 self.main_caret.col = 0;
                 self.main_caret.row += 1;
             }
+        }
+    }
+    pub fn move_up(&mut self) {
+        if self.main_caret.row > 0 {
+            self.main_caret.row -= 1;
+            let len = self.buffer.get(self.main_caret.row).expect("Line out of bounds!").len();
+            if len < self.main_caret.col {
+                self.main_caret.col = len;
+            }
+        } else {
+            self.main_caret.col = 0;
+        }
+    }
+    pub fn move_down(&mut self) {
+        if self.main_caret.row < self.buffer.len() - 1 {
+            self.main_caret.row += 1;
+            let len = self.buffer.get(self.main_caret.row).expect("Line out of bounds!").len();
+            if len < self.main_caret.col {
+                self.main_caret.col = len;
+            }
+        } else {
+            self.main_caret.col = self.buffer
+                                      .get(self.main_caret.row)
+                                      .expect("Caret out of bounds!")
+                                      .len();
         }
     }
     pub fn insert_char(&mut self, c: char) {
@@ -272,9 +334,9 @@ mod tests {
     fn editor_test1() {
         let mut editor = Editor::new();
         editor.insert(String::from("l"));
-        editor.backward();
+        editor.move_left();
         editor.insert(String::from("He"));
-        editor.forward();
+        editor.move_right();
         editor.insert(String::from("lo world!!"));
         assert_eq!(editor.get_all(), "Hello world!!");
     }
