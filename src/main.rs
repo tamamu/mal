@@ -3,25 +3,23 @@
 #![allow(unused_variables)]
 #![allow(non_snake_case)]
 
-extern crate rustbox;
 extern crate clap;
 extern crate termion;
 
-use rustbox::{Color, RustBox, Key};
+use termion::{clear, color, style, cursor};
 use termion::event::{Key, Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
-use termion::raw::IntoRawMode;
+use termion::raw::{IntoRawMode, RawTerminal};
 use std::io::{Write, stdout, stdin};
 use clap::{Arg, App};
 use std::path::Path;
-use std::error::Error;
-use std::default::Default;
+use std::io::{Stdin, Stdout};
 mod backend;
 use backend::*;
 
 struct EditorView {
     pub editor: Editor,
-    pub term: RustBox,
+    pub stdout: MouseTerminal<RawTerminal<Stdout>>,
     x: usize,
     y: usize,
     row: usize,
@@ -30,12 +28,12 @@ struct EditorView {
 }
 
 fn right_aligned_text(text: &str, width: usize) -> String {
-    let blanks_len = width - text.chars().count();
-    if blanks_len < 0 {
-        panic!("{} is out of width size {}!", text, width);
+    let len = text.chars().count();
+    if width < len {
+        panic!("\"{}\" is out of width size {}!", text, width);
     }
     let mut aligned = String::with_capacity(width);
-    for idx in 0..blanks_len {
+    for idx in 0..width - len {
         aligned.push(' ');
     }
     aligned.push_str(text);
@@ -44,15 +42,13 @@ fn right_aligned_text(text: &str, width: usize) -> String {
 
 impl EditorView {
     fn new() -> EditorView {
-        let term = match RustBox::init(Default::default()) {
-            Result::Ok(v) => v,
-            Result::Err(e) => panic!("{}", e),
-        };
-        let col = term.width();
-        let row = term.height();
+        let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
+        let size = termion::terminal_size().unwrap();
+        let col = size.0 as usize;
+        let row = size.1 as usize;
         EditorView {
             editor: Editor::new(),
-            term: term,
+            stdout: stdout,
             x: 0,
             y: 0,
             row: row - 1,
@@ -60,13 +56,15 @@ impl EditorView {
             lnum_pad: 1,
         }
     }
+    fn clear(&mut self) {
+        write!(self.stdout, "{}", clear::All);
+    }
     fn format_info(&self) -> String {
-        right_aligned_text(&format!("{}:{}  ",
-                                    self.editor.main_caret.row,
-                                    self.editor.main_caret.col),
+        let main_caret = self.editor.carets.get(0).expect("Caret not found!");
+        right_aligned_text(&format!("{}:{}  ", main_caret.row, main_caret.col),
                            self.col)
     }
-    fn redraw(&self) {
+    fn redraw(&mut self) {
         let start = self.y;
         let end = self.editor.len() - start;
         let height = self.row;
@@ -75,40 +73,86 @@ impl EditorView {
         }
         self.redraw_infobar();
     }
-    fn redraw_infobar(&self) {
-        self.term.print(0,
-                        self.row,
-                        rustbox::RB_BOLD,
-                        Color::White,
-                        Color::Cyan,
-                        &self.format_info());
+    fn redraw_infobar(&mut self) {
+        let info = self.format_info();
+        write!(self.stdout,
+               "{}{}{}{}{}{}{}",
+               cursor::Goto(1, (self.row + 1) as u16),
+               color::Fg(color::White),
+               color::Bg(color::Rgb(50, 50, 50)),
+               style::Bold,
+               &info,
+               color::Bg(color::Black),
+               style::Reset);
     }
-    fn redraw_line(&self, index: usize) {
-        let dy = index - self.y;
-        for col in 0..self.col {
-            self.term.print_char(col, dy, rustbox::RB_NORMAL, Color::White, Color::Black, ' ');
-        }
+    fn redraw_line(&mut self, index: usize) {
+        let main_caret = self.editor.carets.get(0).expect("Caret not found!");
+        let dy = (index - self.y) as u16;
+        // write!(self.stdout,
+        //     "{}{}",
+        //   cursor::Goto(1, dy + 1),
+        // clear::CurrentLine);
         if self.editor.len() > index && index >= self.y && self.y + self.row >= index {
             let line = self.editor.get(index).unwrap();
-            self.term.print(0,
-                            dy,
-                            rustbox::RB_BOLD,
-                            Color::Yellow,
-                            Color::Black,
-                            &format!("{} ",
-                                     right_aligned_text(&(index + 1).to_string(), self.lnum_pad)));
-            self.term.print(self.lnum_pad + 2,
-                            dy,
-                            rustbox::RB_NORMAL,
-                            Color::White,
-                            Color::Black,
-                            &line.extract());
+            write!(self.stdout,
+                   "{}{}{}{}{} {}{}{}",
+                   cursor::Goto(1, dy + 1),
+                   style::Bold,
+                   color::Fg(color::Yellow),
+                   color::Bg(color::Black),
+                   &right_aligned_text(&(index + 1).to_string(), self.lnum_pad),
+                   style::Reset,
+                   color::Fg(color::White),
+                   color::Bg(color::Black));
+            if main_caret.row == index {
+                let col = main_caret.col;
+                let count = line.len();
+                if col == count {
+                    write!(self.stdout,
+                           "{}{}{}{}",
+                           &line.extract(),
+                           style::Invert,
+                           ' ',
+                           style::Reset);
+                } else {
+                    for idx in 0..col {
+                        write!(self.stdout, "{}", line[idx]);
+                    }
+                    let c = match line.get(col) {
+                        Some(ch) => *ch,
+                        None => ' ',
+                    };
+                    write!(self.stdout, "{}{}{}", style::Invert, c, style::Reset);
+                    for idx in col + 1..count {
+                        write!(self.stdout, "{}", line[idx]);
+                    }
+                }
 
+            } else {
+                write!(self.stdout,
+                       "{}{}{}{}{} {}{}{}{}",
+                       cursor::Goto(1, dy + 1),
+                       style::Bold,
+                       color::Fg(color::Yellow),
+                       color::Bg(color::Black),
+                       &right_aligned_text(&(index + 1).to_string(), self.lnum_pad),
+                       style::Reset,
+                       color::Fg(color::White),
+                       color::Bg(color::Black),
+                       &line.extract());
+            }
         }
     }
-    fn draw_caret(&self) {
-        self.term.set_cursor((self.editor.main_caret.col + self.lnum_pad) as isize + 2,
-                             (self.editor.main_caret.row - self.y) as isize);
+    fn draw_caret(&mut self) {
+        let main_caret = self.editor.carets.get(0).expect("Caret not found!");
+        write!(self.stdout,
+               "{}{}",
+               cursor::Goto((main_caret.col - self.x + 2 + self.lnum_pad) as u16,
+                            (main_caret.row - self.y + 1) as u16),
+               cursor::Show);
+    }
+    fn flush(&mut self) {
+        self.stdout.flush().unwrap();
     }
 }
 
@@ -131,85 +175,121 @@ fn main() {
         view.editor.read_file(Path::new(path))
     }
 
+    view.lnum_pad = view.editor.len().to_string().chars().count();
 
+    let stdin = stdin();
+
+    view.clear();
     view.redraw();
     view.draw_caret();
-    view.term.present();
-    loop {
-        match view.term.poll_event(false) {
-            Ok(rustbox::Event::KeyEvent(key)) => {
+    view.flush();
+    for c in stdin.events() {
+        write!(view.stdout, "{}", clear::All);
+        let evt = c.unwrap();
+        match evt {
+            Event::Key(key) => {
                 match key {
-                    Key::Char(c) => {
-                        view.editor.insert_char(c);
-                        view.redraw_line(view.editor.main_caret.row);
-                        view.draw_caret();
-                        view.term.present();
-                    }
-                    Key::Enter => {
+                    Key::Char('\n') => {
                         view.editor.insert_line();
-                        if view.editor.main_caret.row >= view.y + view.row {
-                            view.y += 1;
+                        {
+                            let main_caret = view.editor.carets.get(0).expect("Caret not found!");
+                            if main_caret.row >= view.y + view.row {
+                                view.y += 1;
+                            }
                         }
                         view.lnum_pad = view.editor.len().to_string().chars().count();
                         view.redraw();
-                        view.draw_caret();
-                        view.term.present();
                     }
+
                     Key::Backspace => {
                         view.editor.backspace();
-                        if view.editor.main_caret.row < view.y {
+                        if view.editor.carets.get(0).expect("Caret not found!").row < view.y {
                             view.y -= 1;
                             view.redraw();
                         }
                         view.redraw();
-                        view.draw_caret();
-                        view.term.present();
                     }
                     Key::Home => {
                         view.y = 0;
                         view.editor.move_top();
-                        //view.redraw();
-                        //view.draw_caret();
-                        view.term.present();
+                        view.redraw();
+                    }
+                    Key::End => {
+                        let row = view.editor.len() - 1;
+                        view.y = row;
+                        view.editor.move_end();
+                        view.redraw();
+                    }
+                    Key::PageUp => {
+                        view.editor.move_pageup(view.row - 1);
+                        let row = view.editor.carets.get(0).expect("Caret not found!").row;
+                        view.y = row;
+                        view.redraw();
+                    }
+                    Key::PageDown => {
+                        view.editor.move_pagedown(view.row - 1);
+                        let row = view.editor.carets.get(0).expect("Caret not found!").row + 1;
+                        let len = view.editor.len();
+                        if row > view.row {
+                            view.y = row - view.row;
+                        } else {
+                            view.y = 0;
+                        }
+                        view.redraw();
                     }
                     Key::Left => {
                         view.editor.move_left();
-                        view.draw_caret();
-                        view.term.present();
+                        view.redraw();
                     }
                     Key::Right => {
                         view.editor.move_right();
-                        view.draw_caret();
-                        view.term.present();
+                        view.redraw();
                     }
                     Key::Up => {
                         view.editor.move_up();
-                        if view.editor.main_caret.row < view.y {
-                            view.y -= 1;
-                            view.redraw();
+                        {
+                            let main_caret = view.editor.carets.get(0).expect("Caret not found!");
+                            if main_caret.row < view.y {
+                                view.y -= 1;
+                            }
                         }
-                        view.draw_caret();
-                        view.term.present();
+                        view.redraw();
                     }
                     Key::Down => {
                         view.editor.move_down();
-                        if view.editor.main_caret.row >= view.y + view.row {
-                            view.y += 1;
-                            view.redraw();
+                        {
+                            let main_caret = view.editor.carets.get(0).expect("Caret not found!");
+                            if main_caret.row >= view.y + view.row {
+                                view.y += 1;
+                            }
                         }
-                        view.draw_caret();
-                        view.term.present();
+                        view.redraw();
                     }
                     Key::Esc => {
                         break;
                     }
+                    Key::Char(c) => {
+                        view.editor.insert_char(c);
+                        view.redraw();
+                    }
                     _ => {}
                 }
-                view.redraw_infobar();
             }
-            Err(e) => panic!("{}", e.description()),
+            Event::Mouse(me) => {
+                match me {
+                    MouseEvent::Press(_, x, y) => {
+                        let main_caret = view.editor.carets.get_mut(0).expect("Caret not found!");
+                        main_caret.col = x as usize;
+                        main_caret.row = y as usize + view.row;
+                    }
+                    _ => {}
+                }
+            }
             _ => {}
         }
+        view.redraw_infobar();
+        view.draw_caret();
+        view.flush();
     }
 }
 
