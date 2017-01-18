@@ -270,6 +270,10 @@ impl Editor {
             }
         }
     }
+    pub fn move_top(&mut self) {
+        self.main_caret.row = 1;
+        self.main_caret.col = 1;
+    }
     pub fn move_up(&mut self) {
         if self.main_caret.row > 0 {
             self.main_caret.row -= 1;
@@ -303,7 +307,7 @@ impl Editor {
         } else {
             1
         };
-        self.main_caret.col += forward_length;
+        self.main_caret.col += 1;
     }
     pub fn insert(&mut self, text: String) {
         let line = &mut self.buffer.get_mut(self.main_caret.row).expect("Caret out of bounds!");

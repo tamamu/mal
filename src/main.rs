@@ -5,8 +5,13 @@
 
 extern crate rustbox;
 extern crate clap;
+extern crate termion;
 
 use rustbox::{Color, RustBox, Key};
+use termion::event::{Key, Event, MouseEvent};
+use termion::input::{TermRead, MouseTerminal};
+use termion::raw::IntoRawMode;
+use std::io::{Write, stdout, stdin};
 use clap::{Arg, App};
 use std::path::Path;
 use std::error::Error;
@@ -158,6 +163,13 @@ fn main() {
                         }
                         view.redraw();
                         view.draw_caret();
+                        view.term.present();
+                    }
+                    Key::Home => {
+                        view.y = 0;
+                        view.editor.move_top();
+                        //view.redraw();
+                        //view.draw_caret();
                         view.term.present();
                     }
                     Key::Left => {
