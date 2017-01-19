@@ -110,7 +110,7 @@ impl TextBuffer {
 pub struct Position {
     pub row: usize,
     pub col: usize,
-    pub range: usize,
+    pub range: isize,
 }
 
 enum EditType {
@@ -156,6 +156,12 @@ impl Editor {
             filename: String::from("Untitled"),
             edit_type: EditType::Normal,
         }
+    }
+    pub fn mode_select(&mut self) {
+        self.edit_type = EditType::Select;
+    }
+    pub fn mode_normal(&mut self) {
+        self.edit_type = EditType::Normal;
     }
     pub fn read_file<P: AsRef<Path>>(&mut self, path: P) {
         let mut file = match File::open(path.as_ref()) {
@@ -228,34 +234,64 @@ impl Editor {
         }
     }
     pub fn move_left(&mut self) {
-        for caret in self.carets.iter_mut() {
-            if caret.col == 0 {
-                if caret.row > 0 {
-                    caret.row -= 1;
-                    caret.col = self.buffer
-                                    .get(caret.row)
-                                    .expect("Caret out of bounds!")
-                                    .len();
+        match self.edit_type {
+            EditType::Normal => {
+                for caret in self.carets.iter_mut() {
+                    if caret.col == 0 {
+                        if caret.row > 0 {
+                            caret.row -= 1;
+                            caret.col = self.buffer
+                                            .get(caret.row)
+                                            .expect("Caret out of bounds!")
+                                            .len();
+                        }
+                    } else {
+                        caret.col -= 1;
+                    }
                 }
-            } else {
-                caret.col -= 1;
+            }
+            EditType::Select => {
+                for caret in self.carets.iter_mut() {
+                    caret.range -= 1;
+                    let ranged_col = caret.range + caret.col as isize;
+                    if ranged_col < 0 {
+                        panic!("select to before line.");
+                    }
+                }
             }
         }
+
     }
     pub fn move_right(&mut self) {
-        for caret in self.carets.iter_mut() {
-            caret.col += 1;
-            let line = self.buffer.get(caret.row).expect("Caret out of bounds!");
-            let len = line.len();
-            if len < caret.col {
-                if self.buffer.len() - 1 <= caret.row {
-                    caret.col = len;
-                } else {
-                    caret.col = 0;
-                    caret.row += 1;
+        match self.edit_type {
+            EditType::Normal => {
+                for caret in self.carets.iter_mut() {
+                    caret.col += 1;
+                    let line = self.buffer.get(caret.row).expect("Caret out of bounds!");
+                    let len = line.len();
+                    if len < caret.col {
+                        if self.buffer.len() - 1 <= caret.row {
+                            caret.col = len;
+                        } else {
+                            caret.col = 0;
+                            caret.row += 1;
+                        }
+                    }
+                }
+            }
+            EditType::Select => {
+                let row_max = self.len() - 1;
+                let col_row_max = self.get(row_max).expect("Line out of bounds!").len();
+                for caret in self.carets.iter_mut() {
+                    caret.range += 1;
+                    let ranged_col = caret.range + caret.col as isize;
+                    if caret.row == row_max && ranged_col > col_row_max as isize {
+                        caret.range = (col_row_max - caret.col) as isize;
+                    }
                 }
             }
         }
+
     }
     pub fn move_top(&mut self) {
         for caret in self.carets.iter_mut() {

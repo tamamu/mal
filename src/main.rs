@@ -122,8 +122,13 @@ impl EditorView {
                         Some(ch) => *ch,
                         None => ' ',
                     };
-                    write!(self.stdout, "{}{}{}", style::Invert, c, style::Reset);
-                    for idx in col + 1..count {
+                    write!(self.stdout, "{}{}", style::Invert, c);
+                    let ranged_col = col + main_caret.range as usize;
+                    for idx in col + 1..ranged_col + 1 {
+                        write!(self.stdout, "{}", line[idx]);
+                    }
+                    write!(self.stdout, "{}", style::Reset);
+                    for idx in ranged_col + 1..count {
                         write!(self.stdout, "{}", line[idx]);
                     }
                 }
@@ -175,6 +180,8 @@ fn main() {
         view.editor.read_file(Path::new(path))
     }
 
+    view.editor.mode_select();
+
     view.lnum_pad = view.editor.len().to_string().chars().count();
 
     let stdin = stdin();
@@ -200,7 +207,6 @@ fn main() {
                         view.lnum_pad = view.editor.len().to_string().chars().count();
                         view.redraw();
                     }
-
                     Key::Backspace => {
                         view.editor.backspace();
                         if view.editor.carets.get(0).expect("Caret not found!").row < view.y {
