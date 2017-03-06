@@ -7,4 +7,3 @@ authors = ["tamamu <tamamu.1r1s@gmail.com>"]
 [dependencies]
 rustbox = "*"
 clap = "2"
-termion = "1.1.4"
