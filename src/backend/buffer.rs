@@ -4,13 +4,8 @@ use std::iter::FromIterator;
 use std::mem;
 use std::ptr;
 
-pub struct List<T> {
-    head: Option<Box<Node<T>>>,
-    tail: RawLink<Node<T>>,
-}
-
 #[derive(Copy)]
-struct RawLink<T> {
+struct Rawlink<T> {
     p: *mut T,
 }
 
@@ -41,27 +36,37 @@ impl<T> Rawlink<T> {
     }
 }
 
-impl<T> Clone for RawLink<T> {
+impl<T> Clone for Rawlink<T> {
     fn clone(&self) -> Self {
-        RawLink { p: self.p }
+        Rawlink { p: self.p }
     }
 }
 
 pub struct Node<T> {
     next: Option<Box<Node<T>>>,
-    prev: RawLink<Node<T>>,
+    prev: Rawlink<Node<T>>,
     value: T,
 }
 
-pub struct Line {
-    head: Box<Node<T>>,
+pub struct Line<T> {
+    head: Option<Box<Node<T>>>,
 }
 
-impl<T> RawLink<T> {
-    fn none() -> RawLink<T> {
-        RawLink { p: ptr::null_mut() }
-    }
+pub struct Buffer<T> {
+    lines: Box<Node<Line<T>>>
 }
+
+use termion::color::Color;
+pub struct Letter {
+    fg: usize,
+		bg: usize,
+		bold: bool,
+		glyph: char,
+		width: usize,
+}
+
+pub type EditorBuffer = Buffer<Letter>;
+
 
 #[cfg(test)]
 mod tests {
