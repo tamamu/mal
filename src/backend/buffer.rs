@@ -48,6 +48,15 @@ pub struct Node<T> {
     value: T,
 }
 
+impl<T> Node<T> {
+    fn insert_back(&mut self, data: T) {
+		    let node = Node{next: self.next,
+				                Rawlink:some(&mut self),
+												value: data};
+				self.next = Some(Box::new(node));
+		}
+}
+
 pub struct Line<T> {
     head: Option<Box<Node<T>>>,
 }
@@ -56,11 +65,29 @@ pub struct Buffer<T> {
     lines: Box<Node<Line<T>>>
 }
 
-use termion::color::Color;
-pub struct Letter {
-    fg: usize,
-		bg: usize,
+pub enum Color {
+    Black,
+		Red,
+		Green,
+		Yellow,
+		Blue,
+		Magenta,
+		Cyan,
+		White,
+		Byte(u16),
+}
+
+pub struct Style {
+    normal_color: bool,
 		bold: bool,
+		underline: bool,
+		reverse: bool,
+}
+
+pub struct Letter {
+    fg: Color,
+		bg: Color,
+		style: Style,
 		glyph: char,
 		width: usize,
 }
