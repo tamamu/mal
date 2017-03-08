@@ -49,11 +49,20 @@ pub struct Node<T> {
 }
 
 impl<T> Node<T> {
-    fn insert_back(&mut self, data: T) {
+    fn new(v: T) -> Node<T> {
+		    Node{value: v, next: None, prev: Rawlink::none()}
+		}
+    fn insert_back(&mut self, v: T) {
 		    let node = Node{next: self.next,
-				                Rawlink:some(&mut self),
-												value: data};
+				                prev: Rawlink:some(&mut self),
+												value: v};
 				self.next = Some(Box::new(node));
+		}
+		fn insert_front(&mut self, v: T) {
+		    let node = Node{next: Some(Box::new(self)),
+				                prev: self.prev,
+												value: v};
+			  self.prev = Rawlink::some(&mut self);
 		}
 }
 
@@ -94,6 +103,9 @@ pub struct Letter {
 
 pub type EditorBuffer = Buffer<Letter>;
 
+impl EditorBuffer {
+    
+}
 
 #[cfg(test)]
 mod tests {
@@ -101,8 +113,8 @@ mod tests {
 
     #[test]
     fn insert_test() {
-        let mut foo = BLinkedList {
-            prev: None,
+        let mut foo = EditorBuffer {
+				    prev: None,
             data: 5,
             next: None,
         };
