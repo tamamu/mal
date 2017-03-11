@@ -14,7 +14,7 @@ use std::collections::VecDeque;
 use std::iter::FromIterator;
 use std::io::Read;
 
-mod buffer;
+// mod buffer;
 
 pub type LineBuffer = VecDeque<char>;
 
