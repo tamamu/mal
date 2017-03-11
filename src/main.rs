@@ -1,17 +1,16 @@
+#![feature(core)]
 #![allow(dead_code)]
 #![allow(unreachable_code)]
 #![allow(unused_variables)]
 #![allow(non_snake_case)]
 
 extern crate clap;
-extern crate termion;
+extern crate rustbox;
 
-use termion::{clear, color, style, cursor};
-use termion::event::{Key, Event, MouseEvent};
-use termion::input::{TermRead, MouseTerminal};
-use termion::raw::{IntoRawMode, RawTerminal};
+use std::default::Default;
 use std::io::{Write, stdout, stdin};
 use clap::{Arg, App};
+use rustbox::{Color, RustBox, Key, OutputMode};
 use std::path::Path;
 use std::io::{Stdin, Stdout};
 mod backend;
@@ -19,7 +18,7 @@ use backend::*;
 
 struct EditorView {
     pub editor: Editor,
-    pub stdout: MouseTerminal<RawTerminal<Stdout>>,
+    pub terminal: RustBox,
     x: usize,
     y: usize,
     row: usize,
@@ -42,13 +41,16 @@ fn right_aligned_text(text: &str, width: usize) -> String {
 
 impl EditorView {
     fn new() -> EditorView {
-        let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
-        let size = termion::terminal_size().unwrap();
-        let col = size.0 as usize;
-        let row = size.1 as usize;
+        let mut terminal = match RustBox::init(Default::default()) {
+            Result::Ok(v) => v,
+            Result::Err(e) => panic!("{}", e),
+        };
+        // terminal.set_output_mode(OutputMode::EightBit);
+        let col = terminal.width();
+        let row = terminal.height();
         EditorView {
             editor: Editor::new(),
-            stdout: stdout,
+            terminal: terminal,
             x: 0,
             y: 0,
             row: row - 1,
@@ -57,14 +59,15 @@ impl EditorView {
         }
     }
     fn clear(&mut self) {
-        write!(self.stdout, "{}", clear::All);
+        self.terminal.clear();
     }
     fn format_info(&self) -> String {
         let main_caret = self.editor.carets.get(0).expect("Caret not found!");
-        right_aligned_text(&format!("{}:{}  ", main_caret.row, main_caret.col),
+        right_aligned_text(&format!("{}:{}", main_caret.row + 1, main_caret.col + 1),
                            self.col)
     }
     fn redraw(&mut self) {
+        self.clear();
         let start = self.y;
         let end = self.editor.len() - start;
         let height = self.row;
@@ -75,89 +78,99 @@ impl EditorView {
     }
     fn redraw_infobar(&mut self) {
         let info = self.format_info();
-        write!(self.stdout,
-               "{}{}{}{}{}{}{}",
-               cursor::Goto(1, (self.row + 1) as u16),
-               color::Fg(color::White),
-               color::Bg(color::Rgb(50, 50, 50)),
-               style::Bold,
-               &info,
-               color::Bg(color::Black),
-               style::Reset);
+        self.terminal.print(0,
+                            self.row,
+                            rustbox::RB_NORMAL,
+                            Color::White,
+                            Color::Blue,
+                            &info);
     }
     fn redraw_line(&mut self, index: usize) {
         let main_caret = self.editor.carets.get(0).expect("Caret not found!");
-        let dy = (index - self.y) as u16;
+        let dy = index - self.y;
         // write!(self.stdout,
         //     "{}{}",
         //   cursor::Goto(1, dy + 1),
         // clear::CurrentLine);
         if self.editor.len() > index && index >= self.y && self.y + self.row >= index {
             let line = self.editor.get(index).unwrap();
-            write!(self.stdout,
-                   "{}{}{}{}{} {}{}{}",
-                   cursor::Goto(1, dy + 1),
-                   style::Bold,
-                   color::Fg(color::Yellow),
-                   color::Bg(color::Black),
-                   &right_aligned_text(&(index + 1).to_string(), self.lnum_pad),
-                   style::Reset,
-                   color::Fg(color::White),
-                   color::Bg(color::Black));
+            self.terminal.print(0,
+                                dy,
+                                rustbox::RB_BOLD,
+                                Color::Yellow,
+                                Color::Black,
+                                &right_aligned_text(&(index + 1).to_string(), self.lnum_pad));
             if main_caret.row == index {
                 let col = main_caret.col;
                 let count = line.len();
                 if col == count {
-                    write!(self.stdout,
-                           "{}{}{}{}",
-                           &line.extract(),
-                           style::Invert,
-                           ' ',
-                           style::Reset);
+                    self.terminal.print(self.lnum_pad + 1,
+                                        dy,
+                                        rustbox::RB_NORMAL,
+                                        Color::White,
+                                        Color::Black,
+                                        &line.extract());
+                    self.terminal.print_char(self.lnum_pad + count + 1,
+                                             dy,
+                                             rustbox::RB_REVERSE,
+                                             Color::White,
+                                             Color::Black,
+                                             ' ');
                 } else {
                     for idx in 0..col {
-                        write!(self.stdout, "{}", line[idx]);
+                        self.terminal.print_char(self.lnum_pad + idx + 1,
+                                                 dy,
+                                                 rustbox::RB_NORMAL,
+                                                 Color::White,
+                                                 Color::Black,
+                                                 line[idx]);
                     }
                     let c = match line.get(col) {
                         Some(ch) => *ch,
                         None => ' ',
                     };
-                    write!(self.stdout, "{}{}", style::Invert, c);
+                    self.terminal.print_char(self.lnum_pad + col + 1,
+                                             dy,
+                                             rustbox::RB_REVERSE,
+                                             Color::White,
+                                             Color::Black,
+                                             c);
                     let ranged_col = col + main_caret.range as usize;
                     for idx in col + 1..ranged_col + 1 {
-                        write!(self.stdout, "{}", line[idx]);
+                        self.terminal.print_char(self.lnum_pad + idx + 1,
+                                                 dy,
+                                                 rustbox::RB_REVERSE,
+                                                 Color::White,
+                                                 Color::Black,
+                                                 line[idx]);
                     }
-                    write!(self.stdout, "{}", style::Reset);
                     for idx in ranged_col + 1..count {
-                        write!(self.stdout, "{}", line[idx]);
+                        self.terminal.print_char(self.lnum_pad + idx + 1,
+                                                 dy,
+                                                 rustbox::RB_NORMAL,
+                                                 Color::White,
+                                                 Color::Black,
+                                                 line[idx]);
                     }
                 }
 
             } else {
-                write!(self.stdout,
-                       "{}{}{}{}{} {}{}{}{}",
-                       cursor::Goto(1, dy + 1),
-                       style::Bold,
-                       color::Fg(color::Yellow),
-                       color::Bg(color::Black),
-                       &right_aligned_text(&(index + 1).to_string(), self.lnum_pad),
-                       style::Reset,
-                       color::Fg(color::White),
-                       color::Bg(color::Black),
-                       &line.extract());
+                self.terminal.print(self.lnum_pad + 1,
+                                    dy,
+                                    rustbox::RB_NORMAL,
+                                    Color::White,
+                                    Color::Black,
+                                    &line.extract());
             }
         }
     }
     fn draw_caret(&mut self) {
         let main_caret = self.editor.carets.get(0).expect("Caret not found!");
-        write!(self.stdout,
-               "{}{}",
-               cursor::Goto((main_caret.col - self.x + 2 + self.lnum_pad) as u16,
-                            (main_caret.row - self.y + 1) as u16),
-               cursor::Show);
+        self.terminal.set_cursor((main_caret.col - self.x + 1 + self.lnum_pad) as isize,
+                                 (main_caret.row - self.y) as isize);
     }
     fn flush(&mut self) {
-        self.stdout.flush().unwrap();
+        self.terminal.present();
     }
 }
 
@@ -180,26 +193,25 @@ fn main() {
         view.editor.read_file(Path::new(path))
     }
 
-    view.editor.mode_select();
+    // view.editor.mode_select();
 
     view.lnum_pad = view.editor.len().to_string().chars().count();
 
-    let stdin = stdin();
-
     view.clear();
     view.redraw();
-    view.draw_caret();
+    // view.draw_caret();
     view.flush();
-    for c in stdin.events() {
-        write!(view.stdout, "{}", clear::All);
-        let evt = c.unwrap();
-        match evt {
-            Event::Key(key) => {
+    loop {
+        match view.terminal.poll_event(false) {
+            Ok(rustbox::Event::KeyEvent(key)) => {
                 match key {
-                    Key::Char('\n') => {
+                    Key::Enter => {
                         view.editor.insert_line();
                         {
-                            let main_caret = view.editor.carets.get(0).expect("Caret not found!");
+                            let main_caret = view.editor
+                                                 .carets
+                                                 .get(0)
+                                                 .expect("Caret not found!");
                             if main_caret.row >= view.y + view.row {
                                 view.y += 1;
                             }
@@ -254,7 +266,10 @@ fn main() {
                     Key::Up => {
                         view.editor.move_up();
                         {
-                            let main_caret = view.editor.carets.get(0).expect("Caret not found!");
+                            let main_caret = view.editor
+                                                 .carets
+                                                 .get(0)
+                                                 .expect("Caret not found!");
                             if main_caret.row < view.y {
                                 view.y -= 1;
                             }
@@ -264,7 +279,10 @@ fn main() {
                     Key::Down => {
                         view.editor.move_down();
                         {
-                            let main_caret = view.editor.carets.get(0).expect("Caret not found!");
+                            let main_caret = view.editor
+                                                 .carets
+                                                 .get(0)
+                                                 .expect("Caret not found!");
                             if main_caret.row >= view.y + view.row {
                                 view.y += 1;
                             }
@@ -281,118 +299,18 @@ fn main() {
                     _ => {}
                 }
             }
-            Event::Mouse(me) => {
-                match me {
-                    MouseEvent::Press(_, x, y) => {
-                        let main_caret = view.editor.carets.get_mut(0).expect("Caret not found!");
-                        main_caret.col = x as usize;
-                        main_caret.row = y as usize + view.row;
-                    }
-                    _ => {}
-                }
+            Ok(rustbox::Event::MouseEvent(mouse, x, y)) => {
+                let main_caret = view.editor
+                                     .carets
+                                     .get_mut(0)
+                                     .expect("Caret not found!");
+                main_caret.col = x as usize;
+                main_caret.row = y as usize + view.row;
             }
             _ => {}
         }
         view.redraw_infobar();
-        view.draw_caret();
+        // view.draw_caret();
         view.flush();
     }
 }
-
-// struct XIMDevice {
-// im: XIM,
-// ic: XIC,
-// }
-//
-// impl XIMDevice {
-// pub fn new(dsp: *mut Display, win: *mut Window) -> XIMDevice {
-// unsafe {
-// if setlocale(LC_CTYPE, CString::new("").unwrap().as_ptr()).is_null() {
-// panic!("Can't set locale.");
-// }
-// if XSupportsLocale() == 0 {
-// panic!("Current locale is not supported.");
-// }
-// if XSetLocaleModifiers(CString::new("").unwrap().as_ptr()).is_null() {
-// panic!("Can't set locale modifiers.\n");
-// }
-// println!("open");
-// let im: XIM = XOpenIM(dsp, ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
-// println!("start check");
-// if im.is_null() {
-// panic!("Couldn't open input method.");
-// }
-// println!("not null");
-// println!("{}", im.is_null());
-// let ic: XIC = XCreateIC(im,
-// XNInputStyle,
-// XIMPreeditCallbacks | XIMStatusCallbacks,
-// XNClientWindow,
-// win);
-// println!("open ic");
-// if ic.is_null() {
-// println!("null");
-// XCloseIM(im);
-// panic!("Couldn't create input context.");
-// }
-// println!("not null");
-// XIMDevice { im: im, ic: ic }
-// }
-// }
-// pub fn close(&mut self) {
-// unsafe {
-// XDestroyIC(self.ic);
-// XCloseIM(self.im);
-// }
-// }
-// }
-//
-// #[macro_use]
-// mod util;
-// fn init_gl() {
-// glcheck!(unsafe { gl::FrontFace(gl::CCW) });
-// glcheck!(unsafe { gl::Enable(gl::DEPTH_TEST) });
-// glcheck!(unsafe { gl::Enable(gl::SCISSOR_TEST) });
-// glcheck!(unsafe { gl::DepthFunc(gl::LEQUAL) });
-// glcheck!(unsafe { gl::FrontFace(gl::CCW) });
-// glcheck!(unsafe { gl::Enable(gl::CULL_FACE) });
-// glcheck!(unsafe { gl::CullFace(gl::BACK) });
-// }
-//
-//
-// fn main() {
-// let builder = glutin::WindowBuilder::new();
-// let window = builder.with_dimensions(640, 480)
-// .with_title("Test Window")
-//                        .with_gl(Latest)
-//                        .with_gl_profile(Core)
-// .build()
-// .unwrap();
-//
-// unsafe {
-// window.make_current();
-// }
-// gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
-//
-// let mut xim = XIMDevice::new(unsafe { window.platform_display() } as _,
-// unsafe { window.platform_window() } as _);
-//
-//
-// init_gl();
-//
-// let vg: nanovg::Context = nanovg::Context::create_gl3(nanovg::ANTIALIAS |
-//                                                      nanovg::STENCIL_STROKES);
-//
-// for event in window.wait_events() {
-// unsafe { gl::Clear(gl::COLOR_BUFFER_BIT) };
-// window.swap_buffers();
-//
-// match event {
-// glutin::Event::Closed => break,
-// _ => (),
-// }
-// }
-//
-// xim.close();
-// }
-//
