@@ -4,7 +4,7 @@ use std::iter::FromIterator;
 use std::mem;
 use std::ptr;
 
-#[derive(Copy)]
+#[derive(Copy,Debug)]
 struct Rawlink<T> {
     p: *mut T,
 }
@@ -42,28 +42,41 @@ impl<T> Clone for Rawlink<T> {
     }
 }
 
+#[derive(Clone,Debug)]
 pub struct Node<T> {
     next: Option<Box<Node<T>>>,
     prev: Rawlink<Node<T>>,
     value: T,
 }
 
+
 impl<T> Node<T> {
     fn new(v: T) -> Node<T> {
-		    Node{value: v, next: None, prev: Rawlink::none()}
-		}
+        Node {
+            value: v,
+            next: None,
+            prev: Rawlink::none(),
+        }
+    }
     fn insert_back(&mut self, v: T) {
-		    let node = Node{next: self.next,
-				                prev: Rawlink:some(&mut self),
-												value: v};
-				self.next = Some(Box::new(node));
-		}
-		fn insert_front(&mut self, v: T) {
-		    let node = Node{next: Some(Box::new(self)),
-				                prev: self.prev,
-												value: v};
-			  self.prev = Rawlink::some(&mut self);
-		}
+        let mut node = Node::new(v);
+        node.prev = Rawlink::some(self);
+        match self.next {
+            Some(_) => {
+                mem::swap(&mut self.next, &mut node.next);
+            }
+            None => {}
+        }
+        self.next = Some(Box::new(node));
+    }
+}
+
+impl<T> Iterator for Node<T> {
+    type Item = Box<Node<T>>;
+
+    fn next(&mut self) -> Option<Box<Node<T>>> {
+        self.next
+    }
 }
 
 pub struct Line<T> {
@@ -71,41 +84,39 @@ pub struct Line<T> {
 }
 
 pub struct Buffer<T> {
-    lines: Box<Node<Line<T>>>
+    lines: Box<Node<Line<T>>>,
 }
 
 pub enum Color {
     Black,
-		Red,
-		Green,
-		Yellow,
-		Blue,
-		Magenta,
-		Cyan,
-		White,
-		Byte(u16),
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+    White,
+    Byte(u16),
 }
 
 pub struct Style {
     normal_color: bool,
-		bold: bool,
-		underline: bool,
-		reverse: bool,
+    bold: bool,
+    underline: bool,
+    reverse: bool,
 }
 
 pub struct Letter {
     fg: Color,
-		bg: Color,
-		style: Style,
-		glyph: char,
-		width: usize,
+    bg: Color,
+    style: Style,
+    glyph: char,
+    width: usize,
 }
 
 pub type EditorBuffer = Buffer<Letter>;
 
-impl EditorBuffer {
-    
-}
+impl EditorBuffer {}
 
 #[cfg(test)]
 mod tests {
@@ -113,11 +124,15 @@ mod tests {
 
     #[test]
     fn insert_test() {
-        let mut foo = EditorBuffer {
-				    prev: None,
-            data: 5,
-            next: None,
-        };
-        println!("{:?}", foo.insert_front(3));
+        let mut node = Node::new(1);
+        println!("{:?}", node);
+        node.insert_back(2);
+        println!("{:?}", node);
+        node.insert_back(3);
+        let v: Vec<_> = node.map(|x| x.value).collect();
+        println!("{:?}", v);
+        //        let next = &node.next.unwrap();
+        //        assert_eq!(next.value, 3);
+        //        assert_eq!(next.prev.resolve().unwrap().value, 1);
     }
 }
