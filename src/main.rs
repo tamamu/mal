@@ -98,7 +98,7 @@ impl EditorView {
                                 dy,
                                 rustbox::RB_BOLD,
                                 Color::Yellow,
-                                Color::Black,
+                                Color::Default,
                                 &right_aligned_text(&(index + 1).to_string(), self.lnum_pad));
             if main_caret.row == index {
                 let col = main_caret.col;
@@ -108,13 +108,13 @@ impl EditorView {
                                         dy,
                                         rustbox::RB_NORMAL,
                                         Color::White,
-                                        Color::Black,
+                                        Color::Default,
                                         &line.extract());
                     self.terminal.print_char(self.lnum_pad + count + 1,
                                              dy,
                                              rustbox::RB_REVERSE,
                                              Color::White,
-                                             Color::Black,
+                                             Color::Default,
                                              ' ');
                 } else {
                     for idx in 0..col {
@@ -122,7 +122,7 @@ impl EditorView {
                                                  dy,
                                                  rustbox::RB_NORMAL,
                                                  Color::White,
-                                                 Color::Black,
+                                                 Color::Default,
                                                  line[idx]);
                     }
                     let c = match line.get(col) {
@@ -133,7 +133,7 @@ impl EditorView {
                                              dy,
                                              rustbox::RB_REVERSE,
                                              Color::White,
-                                             Color::Black,
+                                             Color::Default,
                                              c);
                     let ranged_col = col + main_caret.range as usize;
                     for idx in col + 1..ranged_col + 1 {
@@ -141,7 +141,7 @@ impl EditorView {
                                                  dy,
                                                  rustbox::RB_REVERSE,
                                                  Color::White,
-                                                 Color::Black,
+                                                 Color::Default,
                                                  line[idx]);
                     }
                     for idx in ranged_col + 1..count {
@@ -149,7 +149,7 @@ impl EditorView {
                                                  dy,
                                                  rustbox::RB_NORMAL,
                                                  Color::White,
-                                                 Color::Black,
+                                                 Color::Default,
                                                  line[idx]);
                     }
                 }
@@ -159,7 +159,7 @@ impl EditorView {
                                     dy,
                                     rustbox::RB_NORMAL,
                                     Color::White,
-                                    Color::Black,
+                                    Color::Default,
                                     &line.extract());
             }
         }
